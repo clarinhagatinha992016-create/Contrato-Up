@@ -37,7 +37,7 @@ export default function App() {
     if (sigPad.current?.isEmpty()) {
       setSignatureUrl(null);
     } else {
-      setSignatureUrl(sigPad.current?.getTrimmedCanvas().toDataURL('image/png') || null);
+      setSignatureUrl(sigPad.current?.getCanvas().toDataURL('image/png') || null);
     }
   };
 
