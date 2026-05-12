@@ -36,6 +36,28 @@
       border-color: #000 !important;
     }
   }
+
+  .pdf-mode,
+  .pdf-mode.print-container {
+      width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      box-shadow: none !important;
+      border: none !important;
+      background: white !important;
+  }
+  .pdf-mode * {
+      color: black !important;
+  }
+  .pdf-mode .print-bg-transparent {
+      background: transparent !important;
+  }
+  .pdf-mode .print-border-dark {
+      border-color: #000 !important;
+  }
+  .pdf-mode .text-white {
+      color: black !important;
+  }
 }
 
 body {

@@ -1,5 +1,7 @@
 import React, { useState, useRef } from 'react';
 import SignatureCanvas from 'react-signature-canvas';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
@@ -26,7 +28,9 @@ export default function App() {
   const [contractValue, setContractValue] = useState('');
   
   const sigPad = useRef<SignatureCanvas>(null);
+  const pdfRef = useRef<HTMLDivElement>(null);
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const clearSignature = () => {
     sigPad.current?.clear();
@@ -41,8 +45,61 @@ export default function App() {
     }
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handleDownloadPDF = async () => {
+    const element = pdfRef.current;
+    if (!element) return;
+
+    setIsGenerating(true);
+
+    try {
+      // Find the hidden signature and temporarily make it visible for the canvas
+      const signatureContainer = element.querySelector('.print-only');
+      if (signatureContainer) {
+        signatureContainer.classList.remove('hidden');
+        signatureContainer.classList.add('grid');
+      }
+
+      // Add PDF mode class to apply white background, black colored text, etc.
+      element.classList.add('pdf-mode');
+
+      const canvas = await html2canvas(element, {
+        scale: 2, // High resolution
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false
+      });
+
+      // Cleanup DOM changes
+      element.classList.remove('pdf-mode');
+      if (signatureContainer) {
+        signatureContainer.classList.add('hidden');
+        signatureContainer.classList.remove('grid');
+      }
+
+      // We calculate sizes to keep it roughly A4 portrait sized relative to width
+      const imgData = canvas.toDataURL('image/png');
+      
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'px',
+        format: [canvas.width / 2, canvas.height / 2]
+      });
+
+      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width / 2, canvas.height / 2);
+      pdf.save(`contrato-${artistName.trim().replace(/\s+/g, '-').toLowerCase() || 'up-music'}.pdf`);
+
+    } catch (error) {
+      console.error("Error generating PDF", error);
+      // Ensure cleanup if fails
+      element.classList.remove('pdf-mode');
+      const signatureContainer = element.querySelector('.print-only');
+      if (signatureContainer) {
+        signatureContainer.classList.add('hidden');
+        signatureContainer.classList.remove('grid');
+      }
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const formatDateFallback = (dateString: string) => {
@@ -67,11 +124,12 @@ export default function App() {
           <p className="text-[#888] text-xs uppercase tracking-[0.2em] mt-1">Gerador de Contratos e Promoção</p>
         </div>
         <button 
-          onClick={handlePrint}
-          className="flex items-center justify-center gap-2 bg-transparent border border-[#444] text-[#888] font-bold px-6 py-3 rounded uppercase text-[10px] tracking-widest hover:text-white hover:border-white transition-colors"
+          onClick={handleDownloadPDF}
+          disabled={isGenerating}
+          className={`flex items-center justify-center gap-2 bg-transparent border border-[#444] text-[#888] font-bold px-6 py-3 rounded uppercase text-[10px] tracking-widest transition-colors ${isGenerating ? 'opacity-50 cursor-not-allowed' : 'hover:text-white hover:border-white'}`}
         >
           <Printer className="w-4 h-4" />
-          <span>Imprimir / Gerar PDF</span>
+          <span>{isGenerating ? 'Gerando...' : 'Download PDF Automático'}</span>
         </button>
       </header>
 
@@ -209,7 +267,7 @@ export default function App() {
         </div>
 
         {/* Contract Preview - Displayed on Print */}
-        <div className="bg-[#141414] border border-[#222] text-[#E0E0E0] rounded-lg p-8 lg:p-10 shadow-2xl print-container relative overflow-hidden flex flex-col">
+        <div ref={pdfRef} className="bg-[#141414] border border-[#222] text-[#E0E0E0] rounded-lg p-8 lg:p-10 shadow-2xl print-container relative overflow-hidden flex flex-col">
           {/* Decorative background element */}
           <div className="absolute top-0 right-0 p-4 opacity-5 no-print pointer-events-none">
             <svg width="200" height="200" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
