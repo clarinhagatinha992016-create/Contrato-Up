@@ -14,7 +14,8 @@ import {
   FileText,
   CheckCircle2,
   DollarSign,
-  PenTool
+  PenTool,
+  Share2
 } from 'lucide-react';
 
 type PlanType = 'Básico' | 'Intermediário' | 'Avançado' | 'Premium' | 'Personalizado';
@@ -45,58 +46,89 @@ export default function App() {
     }
   };
 
-  const handleDownloadPDF = async () => {
+  const handleGenerateDocument = async (action: 'download' | 'share') => {
     const element = pdfRef.current;
     if (!element) return;
 
     setIsGenerating(true);
 
     try {
-      // Find the hidden signature and temporarily make it visible for the canvas
-      const signatureContainer = element.querySelector('.print-only');
+      // Create off-screen clone with a fixed 800px width.
+      // This prevents layout breaks on mobile screens when generating the canvas.
+      const cloneContainer = document.createElement('div');
+      cloneContainer.style.position = 'absolute';
+      cloneContainer.style.top = '-10000px';
+      cloneContainer.style.left = '-10000px';
+      cloneContainer.style.width = '800px'; 
+      cloneContainer.style.backgroundColor = '#ffffff';
+      
+      const clone = element.cloneNode(true) as HTMLDivElement;
+      cloneContainer.appendChild(clone);
+      document.body.appendChild(cloneContainer);
+
+      // Add PDF mode class to apply white background, black colored text, etc.
+      clone.classList.add('pdf-mode');
+
+      // Make the signature container visible in the clone
+      const signatureContainer = clone.querySelector('.print-only');
       if (signatureContainer) {
         signatureContainer.classList.remove('hidden');
         signatureContainer.classList.add('grid');
       }
 
-      // Add PDF mode class to apply white background, black colored text, etc.
-      element.classList.add('pdf-mode');
+      // Remove CSS filters that can break canvas rendering or invert the signature
+      const sigImg = clone.querySelector('img');
+      if (sigImg) {
+        sigImg.classList.remove('filter', 'invert', 'opacity-90', 'mix-blend-screen');
+      }
 
-      const canvas = await html2canvas(element, {
+      const canvas = await html2canvas(clone, {
         scale: 2, // High resolution
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false
       });
 
-      // Cleanup DOM changes
-      element.classList.remove('pdf-mode');
-      if (signatureContainer) {
-        signatureContainer.classList.add('hidden');
-        signatureContainer.classList.remove('grid');
-      }
+      // Cleanup DOM
+      document.body.removeChild(cloneContainer);
 
-      // We calculate sizes to keep it roughly A4 portrait sized relative to width
       const imgData = canvas.toDataURL('image/png');
+      const pdfWidth = canvas.width / 2;
+      const pdfHeight = canvas.height / 2;
       
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'px',
-        format: [canvas.width / 2, canvas.height / 2]
+        format: [pdfWidth, pdfHeight]
       });
 
-      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width / 2, canvas.height / 2);
-      pdf.save(`contrato-${artistName.trim().replace(/\s+/g, '-').toLowerCase() || 'up-music'}.pdf`);
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      
+      const fileName = `contrato-${artistName.trim().replace(/\s+/g, '-').toLowerCase() || 'up-music'}.pdf`;
+
+      if (action === 'download') {
+        pdf.save(fileName);
+      } else if (action === 'share') {
+        const blob = pdf.output('blob');
+        const file = new File([blob], fileName, { type: 'application/pdf' });
+        
+        // Use native mobile share to directly share the PDF to WhatsApp if supported
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title: 'Contrato Assinado - UP Music Agency',
+            text: `Contrato assinado pelo cliente.\nArtista: ${artistName || 'N/A'}\nPlano: ${plan}`,
+            files: [file]
+          });
+        } else {
+          // Fallback for desktop: download the file and open WA Web with a text summary
+          pdf.save(fileName);
+          const text = `*CONTRATO UP MUSIC AGENCY* 🎶\n\n*Artista:* ${artistName}\n*Plano:* ${plan}\n*Equipe:* ${promotersCount} pessoas\n*Início:* ${formatDateFallback(startDate)}\n*Valor:* ${contractValue}\n\n_Contrato assinado em PDF._`;
+          window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+        }
+      }
 
     } catch (error) {
       console.error("Error generating PDF", error);
-      // Ensure cleanup if fails
-      element.classList.remove('pdf-mode');
-      const signatureContainer = element.querySelector('.print-only');
-      if (signatureContainer) {
-        signatureContainer.classList.add('hidden');
-        signatureContainer.classList.remove('grid');
-      }
     } finally {
       setIsGenerating(false);
     }
@@ -123,14 +155,26 @@ export default function App() {
           </h1>
           <p className="text-[#888] text-xs uppercase tracking-[0.2em] mt-1">Gerador de Contratos e Promoção</p>
         </div>
-        <button 
-          onClick={handleDownloadPDF}
-          disabled={isGenerating}
-          className={`flex items-center justify-center gap-2 bg-transparent border border-[#444] text-[#888] font-bold px-6 py-3 rounded uppercase text-[10px] tracking-widest transition-colors ${isGenerating ? 'opacity-50 cursor-not-allowed' : 'hover:text-white hover:border-white'}`}
-        >
-          <Printer className="w-4 h-4" />
-          <span>{isGenerating ? 'Gerando...' : 'Download PDF Automático'}</span>
-        </button>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <button 
+            onClick={() => handleGenerateDocument('download')}
+            disabled={isGenerating}
+            className={`flex items-center justify-center gap-2 bg-transparent border border-[#444] text-[#888] font-bold px-6 py-3 rounded uppercase text-[10px] tracking-widest transition-colors ${isGenerating ? 'opacity-50 cursor-not-allowed' : 'hover:text-white hover:border-white'}`}
+          >
+            <Printer className="w-4 h-4" />
+            <span>Download PDF</span>
+          </button>
+          
+          <button 
+            onClick={() => handleGenerateDocument('share')}
+            disabled={isGenerating || !signatureUrl}
+            className={`flex items-center justify-center gap-2 bg-[#D4AF37] text-black font-bold px-6 py-3 rounded uppercase text-[10px] tracking-widest transition-colors ${isGenerating || !signatureUrl ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#C19A2E]'}`}
+            title={!signatureUrl ? 'Preencha a assinatura para enviar' : 'Enviar contrato'}
+          >
+            <Share2 className="w-4 h-4" />
+            <span>Finalizar e Enviar</span>
+          </button>
+        </div>
       </header>
 
       <div className="max-w-6xl mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-8 flex-grow">
@@ -351,9 +395,12 @@ export default function App() {
               <div className="mt-8 bg-[#1A1812] border border-[#D4AF37]/30 p-5 rounded flex items-start gap-4 print-bg-transparent print-border-dark">
                 <CheckCircle2 className="w-5 h-5 text-[#D4AF37] shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="font-medium text-[#D4AF37] text-sm mb-1 uppercase tracking-wider">Aprovação Pendente</h4>
+                  <h4 className="font-medium text-[#D4AF37] text-sm mb-1 uppercase tracking-wider">{signatureUrl ? 'Aprovado e Assinado' : 'Aprovação Pendente'}</h4>
                   <p className="text-[#888] text-xs leading-relaxed italic font-serif">
-                    As condições descritas acima representam o acordo de prestação de serviços de divulgação da UP Music Agency. Aguardando assinatura para efetivação do contrato.
+                    {signatureUrl 
+                      ? 'Este documento representa o acordo formalizado dos serviços de divulgação da UP Music Agency. A assinatura digital confirma os termos estruturados acima.'
+                      : 'As condições descritas acima representam o acordo de prestação de serviços de divulgação da UP Music Agency. Aguardando assinatura para efetivação do contrato.'
+                    }
                   </p>
                 </div>
               </div>
@@ -365,19 +412,19 @@ export default function App() {
               <div>
                 {signatureUrl ? (
                   <div className="flex flex-col items-center justify-end h-16 w-full mb-2">
-                    <img src={signatureUrl} alt="Assinatura" className="max-h-16 object-contain filter invert opacity-90 print:filter-none print:opacity-100 mix-blend-screen print:mix-blend-normal" />
-                    <div className="border-t border-[#444] w-full print-border-dark mt-1"></div>
+                    <img src={signatureUrl} alt="Assinatura" className="max-h-16 object-contain filter invert opacity-90 mix-blend-screen pdf-mode:filter-none pdf-mode:opacity-100 pdf-mode:mix-blend-normal" />
+                    <div className="border-t border-[#444] w-full mt-1 print-border-dark"></div>
                   </div>
                 ) : (
                   <div className="border-t border-[#222] w-full mb-2 print-border-dark mt-16"></div>
                 )}
                 <p className="font-bold text-white print:text-black">{artistName || 'Contratante'}</p>
-                <p className="text-[#666] tracking-widest uppercase text-[10px] mt-1">Artista Representado</p>
+                <p className="text-[#666] tracking-widest uppercase text-[10px] mt-1 print:text-black">Artista Representado</p>
               </div>
               <div>
                 <div className="border-t border-[#222] w-full mb-2 print-border-dark mt-16"></div>
                 <p className="font-bold text-white print:text-black">UP Music Agency</p>
-                <p className="text-[#666] tracking-widest uppercase text-[10px] mt-1">Gestão e Promoção</p>
+                <p className="text-[#666] tracking-widest uppercase text-[10px] mt-1 print:text-black">Gestão e Promoção</p>
               </div>
             </div>
             
